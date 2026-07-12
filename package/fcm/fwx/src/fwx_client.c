@@ -757,12 +757,6 @@ static u_int32_t af_client_hook2(unsigned int hook,
 	else if (skb->protocol == htons(ETH_P_IPV6)) {
 		ip6h = ipv6_hdr(skb);
 		nfc = find_af_client_by_ipv6(&ip6h->daddr);
-		if (nfc){
-			AF_LMT_DEBUG("found ipv6 %pI6 client\n", &ip6h->daddr);
-		}
-		else{
-			AF_LMT_DEBUG("not found ipv6 %pI6 client\n", &ip6h->daddr);
-		}
 	}
 	if (nfc){
 		nfc->update_jiffies = jiffies;  
@@ -786,8 +780,8 @@ static u_int32_t af_client_hook_postrouting(unsigned int hook,
 {
 #endif
 	af_client_info_t *nfc = NULL;
-	struct iphdr *iph = NULL;
-	struct ipv6hdr *ip6h = NULL;
+	struct ethhdr *ethhdr = NULL;
+	unsigned char dmac[ETH_ALEN];
 	const struct net_device *out_dev = NULL;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
@@ -801,34 +795,21 @@ static u_int32_t af_client_hook_postrouting(unsigned int hook,
 	if (!strstr(out_dev->name, g_lan_ifname))
 		return NF_ACCEPT;
 
-	if (skb->protocol == htons(ETH_P_IP)) {
-		iph = ip_hdr(skb);
-		if (!iph)
-			return NF_ACCEPT;
-		AF_CLIENT_LOCK_R();
-		nfc = find_af_client_by_ip(iph->daddr);
-		if (nfc) {
-			nfc->flow.down_bytes += skb->len;
-			nfc->flow.down_pkts++;
-			nfc->update_jiffies = jiffies;
-		}
-		AF_CLIENT_UNLOCK_R();
+	ethhdr = eth_hdr(skb);
+	if (ethhdr) {
+		memcpy(dmac, ethhdr->h_dest, ETH_ALEN);
+	} else {
+		memcpy(dmac, &skb->cb[40], ETH_ALEN);
 	}
-	else if (skb->protocol == htons(ETH_P_IPV6)) {
-		if (AF_MODE_GATEWAY != af_work_mode)
-			return NF_ACCEPT;
-		ip6h = ipv6_hdr(skb);
-		if (!ip6h)
-			return NF_ACCEPT;
-		AF_CLIENT_LOCK_R();
-		nfc = find_af_client_by_ipv6(&ip6h->daddr);
-		if (nfc) {
-			nfc->flow.down_bytes += skb->len;
-			nfc->flow.down_pkts++;
-			nfc->update_jiffies = jiffies;
-		}
-		AF_CLIENT_UNLOCK_R();
+
+	AF_CLIENT_LOCK_R();
+	nfc = find_af_client(dmac);
+	if (nfc) {
+		nfc->flow.down_bytes += skb->len;
+		nfc->flow.down_pkts++;
+		nfc->update_jiffies = jiffies;
 	}
+	AF_CLIENT_UNLOCK_R();
 
 	return NF_ACCEPT;
 }
