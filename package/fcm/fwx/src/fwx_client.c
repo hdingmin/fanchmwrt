@@ -765,12 +765,71 @@ static u_int32_t af_client_hook2(unsigned int hook,
 		}
 	}
 	if (nfc){
-		nfc->flow.down_bytes += skb->len;
-		nfc->flow.down_pkts++;
 		nfc->update_jiffies = jiffies;  
 	}
 
 	AF_CLIENT_UNLOCK_R();
+	return NF_ACCEPT;
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+static u_int32_t af_client_hook_postrouting(void *priv,
+                                             struct sk_buff *skb,
+                                             const struct nf_hook_state *state)
+{
+#else
+static u_int32_t af_client_hook_postrouting(unsigned int hook,
+                                             struct sk_buff *skb,
+                                             const struct net_device *in,
+                                             const struct net_device *out,
+                                             int (*okfn)(struct sk_buff *))
+{
+#endif
+	af_client_info_t *nfc = NULL;
+	struct iphdr *iph = NULL;
+	struct ipv6hdr *ip6h = NULL;
+	const struct net_device *out_dev = NULL;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+	out_dev = state->out;
+#else
+	out_dev = out;
+#endif
+	if (!out_dev)
+		return NF_ACCEPT;
+
+	if (!strstr(out_dev->name, g_lan_ifname))
+		return NF_ACCEPT;
+
+	if (skb->protocol == htons(ETH_P_IP)) {
+		iph = ip_hdr(skb);
+		if (!iph)
+			return NF_ACCEPT;
+		AF_CLIENT_LOCK_R();
+		nfc = find_af_client_by_ip(iph->daddr);
+		if (nfc) {
+			nfc->flow.down_bytes += skb->len;
+			nfc->flow.down_pkts++;
+			nfc->update_jiffies = jiffies;
+		}
+		AF_CLIENT_UNLOCK_R();
+	}
+	else if (skb->protocol == htons(ETH_P_IPV6)) {
+		if (AF_MODE_GATEWAY != af_work_mode)
+			return NF_ACCEPT;
+		ip6h = ipv6_hdr(skb);
+		if (!ip6h)
+			return NF_ACCEPT;
+		AF_CLIENT_LOCK_R();
+		nfc = find_af_client_by_ipv6(&ip6h->daddr);
+		if (nfc) {
+			nfc->flow.down_bytes += skb->len;
+			nfc->flow.down_pkts++;
+			nfc->update_jiffies = jiffies;
+		}
+		AF_CLIENT_UNLOCK_R();
+	}
+
 	return NF_ACCEPT;
 }
 
@@ -787,6 +846,12 @@ static struct nf_hook_ops af_client_ops[] = {
 		.pf = NFPROTO_INET,
 		.hooknum = NF_INET_FORWARD,
 		.priority = NF_IP_PRI_LAST - 1,
+	},
+	{
+		.hook = af_client_hook_postrouting,
+		.pf = NFPROTO_INET,
+		.hooknum = NF_INET_POST_ROUTING,
+		.priority = NF_IP_PRI_LAST,
 	},
 
 };
@@ -809,6 +874,24 @@ static struct nf_hook_ops af_client_ops[] = {
 		.pf = NFPROTO_IPV6,
 		.hooknum = NF_INET_FORWARD,
 		.priority = NF_IP_PRI_FIRST + 1,
+	},
+	{
+		.hook = af_client_hook_postrouting,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+		.owner = THIS_MODULE,
+#endif
+		.pf = NFPROTO_IPV4,
+		.hooknum = NF_INET_POST_ROUTING,
+		.priority = NF_IP_PRI_LAST,
+	},
+	{
+		.hook = af_client_hook_postrouting,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+		.owner = THIS_MODULE,
+#endif
+		.pf = NFPROTO_IPV6,
+		.hooknum = NF_INET_POST_ROUTING,
+		.priority = NF_IP_PRI_LAST,
 	},
 };
 #endif

@@ -8,8 +8,11 @@ FWXD_BIN="/usr/bin/fwxd"
 FEATURE_FILE="/tmp/feature.cfg"
 
 stop_service(){
-	killall -9 fwxd
-	killall -9 rule_manager
+	killall -TERM fwxd 2>/dev/null
+	killall -TERM rule_manager 2>/dev/null
+	sleep 2
+	killall -9 fwxd 2>/dev/null
+	killall -9 rule_manager 2>/dev/null
 }
 
 start_service(){

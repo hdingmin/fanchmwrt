@@ -130,6 +130,9 @@ void fwx_netlink_handler(struct uloop_fd *u, unsigned int ev)
     if (active_obj) {
         node->active = json_object_get_int(active_obj);
         LOG_DEBUG("fwx_netlink: received active=%d for %s\n", node->active, mac);
+        if (node->active == 1) {
+            node->online = 1;
+        }
     }
     
     

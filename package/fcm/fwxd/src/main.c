@@ -298,6 +298,18 @@ void fwx_handle_sigusr2(int sig) {
 	LOG_WARN("change log level to %d\n", current_log_level);
 }
 
+static volatile sig_atomic_t g_sigterm_received = 0;
+
+void fwx_handle_sigterm(int sig) {
+    if (g_sigterm_received)
+        return;
+    g_sigterm_received = 1;
+    LOG_WARN("Received signal %d, saving client backups before exit...\n", sig);
+    save_all_client_backup_to_files();
+    LOG_WARN("Client backups saved, exiting...\n");
+    exit(0);
+}
+
 void init_fwx_capability(void) {
     g_fwx_capability.wireless_support = (access("/etc/config/wireless", F_OK) == 0) ? 1 : 0;
     LOG_INFO("init capability: wireless_support=%d\n", g_fwx_capability.wireless_support);
@@ -334,6 +346,8 @@ int main(int argc, char **argv)
     uloop_init();
     signal(SIGUSR1, fwx_handle_sigusr1);	
     signal(SIGUSR2, fwx_handle_sigusr2);
+    signal(SIGTERM, fwx_handle_sigterm);
+    signal(SIGINT, fwx_handle_sigterm);
     signal(SIGCHLD, SIG_IGN);
     init_client_list();
     load_app_valid_time_config();
